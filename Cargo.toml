@@ -1,0 +1,38 @@
+[package]
+name = "upnpsim"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+authors = ["Erik Hollensbe <git@hollensbe.org>"]
+description = "UPnP IGD router simulator for testing"
+license = "AGPL-3.0-only"
+repository = "https://github.com/erikh/upnpsim"
+keywords = ["upnp", "igd", "simulator", "testing", "nat"]
+categories = ["development-tools::testing", "network-programming"]
+readme = "README.md"
+
+[[bin]]
+name = "upnpsim"
+path = "src/bin/upnpsim/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+http = "1"
+quick-xml = { version = "0.37", features = ["serialize"] }
+uuid = { version = "1", features = ["v4"] }
+socket2 = "0.5"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+fancy-duration = "0.9"
+bytes = "1.11.1"
+
+[dev-dependencies]
+igd = "0.12"
+reqwest = { version = "0.12", features = ["default-tls"] }
