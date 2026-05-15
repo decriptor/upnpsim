@@ -32,6 +32,7 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 fancy-duration = "0.9"
 bytes = "1.11.1"
+httpdate = "1"
 
 [dev-dependencies]
 igd = "0.12"

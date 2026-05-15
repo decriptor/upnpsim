@@ -1,20 +1,22 @@
 # upnpsim
 
 A UPnP IGD (Internet Gateway Device) router simulator for testing. It
-implements the WANIPConnection:1 service so that UPnP client code--whether
-using `upnpc`, the `igd` crate, or raw SOAP--can be exercised against a
-realistic, fully controllable target without real hardware.
+implements WANIPConnection:1 and WANIPConnection:2 service surfaces so that
+UPnP client code--whether using `upnpc`, the `igd` crate, or raw SOAP--can be
+exercised against a realistic, fully controllable target without real hardware.
 
 ## Features
 
-- **Full WANIPConnection:1 service** -- AddPortMapping, DeletePortMapping,
-  GetExternalIPAddress, GetSpecificPortMappingEntry,
-  GetGenericPortMappingEntry, GetStatusInfo
+- **WANIPConnection:1 and :2 support** -- v1 core actions plus v2-required
+  actions including SetConnectionType, GetConnectionTypeInfo,
+  RequestConnection, ForceTermination, GetNATRSIPStatus, AddAnyPortMapping,
+  DeletePortMappingRange, and GetListOfPortMappings
 - **SSDP discovery** -- responds to M-SEARCH queries and sends periodic
   ssdp:alive notifications so clients can discover the simulated gateway
-  automatically
+  automatically; includes UDA2 headers (`BOOTID.UPNP.ORG`,
+  `CONFIGID.UPNP.ORG`) and byebye lifecycle notifications
 - **GENA eventing** -- SUBSCRIBE / UNSUBSCRIBE with SID tracking, renewal,
-  and timeout-based expiry
+  timeout-based expiry, and callback URL validation
 - **Virtual clock with time-shift** -- advance the daemon's clock by
   arbitrary durations to test TTL expiry without waiting
 - **TTL modes** -- `respect` (default) expires mappings and subscriptions on
@@ -55,10 +57,13 @@ group on all interfaces, and creates a control socket at `/tmp/upnpsim.sock`.
 In another terminal, use any UPnP client:
 
 ```
-# Using miniupnpc
+# Using miniupnpc (v1 endpoint)
 upnpc -u http://127.0.0.1:5000/device.xml -s
 upnpc -u http://127.0.0.1:5000/device.xml -a 192.168.1.50 80 8080 TCP 3600
 upnpc -u http://127.0.0.1:5000/device.xml -l
+
+# v2 description endpoint
+curl -s http://127.0.0.1:5000/device-v2.xml | head
 
 # Or use the control CLI
 upnpsim status
@@ -130,10 +135,15 @@ specify a non-default control socket location.
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/device.xml` | UPnP root device description |
+| GET | `/device-v2.xml` | UPnP root device description (IGD:2) |
 | GET | `/scpd/WANIPConn1.xml` | WANIPConnection:1 service description |
+| GET | `/scpd/WANIPConn2.xml` | WANIPConnection:2 service description |
 | POST | `/ctl/WANIPConn1` | SOAP action endpoint |
+| POST | `/ctl/WANIPConn2` | SOAP action endpoint (v2) |
 | SUBSCRIBE | `/evt/WANIPConn1` | GENA subscription |
 | UNSUBSCRIBE | `/evt/WANIPConn1` | GENA unsubscription |
+| SUBSCRIBE | `/evt/WANIPConn2` | GENA subscription (v2) |
+| UNSUBSCRIBE | `/evt/WANIPConn2` | GENA unsubscription (v2) |
 
 ## Testing
 
@@ -144,8 +154,10 @@ make test
 This runs clippy (warnings are fatal) followed by `cargo test`, which
 executes:
 
-- **23 integration tests** covering SOAP actions, GENA subscriptions, control
-  socket commands, HTTP endpoints, TTL expiry with time-shift, and error cases
+- **23 integration tests (v1)**
+- **23 integration tests (v2)** covering required v2 action surface,
+  SOAPAction conformance checks, SSDP header assertions, and eventing
+  acceptance/rejection behavior
 - **7 upnpc tests** that exercise the daemon through the real `upnpc` binary
   (from miniupnpc), cross-verifying results against the SOAP API. These skip
   gracefully if `upnpc` is not installed.
@@ -154,10 +166,10 @@ executes:
 
 ```
                  +-----------+
-  SSDP M-SEARCH |           |  HTTP GET /device.xml, /scpd/...
+  SSDP M-SEARCH |           |  HTTP GET /device.xml, /device-v2.xml, /scpd/...
   ──────────────>   upnpsim  <──────────────────────────────────
-                 |           |  POST /ctl/WANIPConn1 (SOAP)
-  SSDP NOTIFY   |  daemon   |  SUBSCRIBE/UNSUBSCRIBE /evt/...
+                 |           |  POST /ctl/WANIPConn1, /ctl/WANIPConn2 (SOAP)
+  SSDP NOTIFY   |  daemon   |  SUBSCRIBE/UNSUBSCRIBE /evt/WANIPConn{1,2}
   <──────────────|           |──────────────────────────────────>
                  +-----------+
                       |

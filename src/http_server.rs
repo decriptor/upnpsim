@@ -72,19 +72,54 @@ async fn handle_request(
             let uuid = state.read().await.device_uuid.clone();
             xml_response(200, description::device_xml(&uuid, host))
         }
-        ("GET", "/scpd/WANIPConn1.xml") => {
-            xml_response(200, description::scpd_xml().to_string())
+        ("GET", "/device-v2.xml") => {
+            let uuid = state.read().await.device_uuid.clone();
+            xml_response(200, description::device_v2_xml(&uuid, host))
+        }
+        ("GET", "/scpd/WANIPConn1.xml") => xml_response(200, description::scpd_xml().to_string()),
+        ("GET", "/scpd/WANIPConn2.xml") => {
+            xml_response(200, description::scpd_v2_xml().to_string())
         }
         ("POST", "/ctl/WANIPConn1") => {
+            let soap_action = req
+                .headers()
+                .get("SOAPAction")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string);
             let body_bytes = collect_body(req).await;
             let body_str = String::from_utf8_lossy(&body_bytes).to_string();
-            let (status, xml) = soap::handle_soap(&body_str, state, clock).await;
+            let (status, xml) = soap::handle_soap(
+                &body_str,
+                soap_action.as_deref(),
+                "urn:schemas-upnp-org:service:WANIPConnection:1",
+                state,
+                clock,
+            )
+            .await;
+            xml_response(status, xml)
+        }
+        ("POST", "/ctl/WANIPConn2") => {
+            let soap_action = req
+                .headers()
+                .get("SOAPAction")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string);
+            let body_bytes = collect_body(req).await;
+            let body_str = String::from_utf8_lossy(&body_bytes).to_string();
+            let (status, xml) = soap::handle_soap(
+                &body_str,
+                soap_action.as_deref(),
+                "urn:schemas-upnp-org:service:WANIPConnection:2",
+                state,
+                clock,
+            )
+            .await;
             xml_response(status, xml)
         }
         ("SUBSCRIBE", path) if path.starts_with("/evt/") => {
             let headers = req.headers().clone();
             let (status, extra_headers, body) =
-                eventing::handle_subscribe(&headers, state, clock).await;
+                eventing::handle_subscribe(&headers, state, clock, host).await;
             let mut resp = Response::builder().status(status);
             for (k, v) in &extra_headers {
                 resp = resp.header(*k, v.as_str());

@@ -28,19 +28,23 @@ impl std::str::FromStr for TtlMode {
         match s.to_lowercase().as_str() {
             "respect" => Ok(TtlMode::Respect),
             "disrespect" => Ok(TtlMode::Disrespect),
-            _ => Err(anyhow::anyhow!("invalid TTL mode: {s}, expected 'respect' or 'disrespect'")),
+            _ => Err(anyhow::anyhow!(
+                "invalid TTL mode: {s}, expected 'respect' or 'disrespect'"
+            )),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MappingKey {
+    pub remote_host: String,
     pub protocol: String,
     pub external_port: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PortMapping {
+    pub remote_host: String,
     pub enabled: bool,
     pub internal_client: String,
     pub internal_port: u16,
@@ -69,7 +73,11 @@ impl PortMapping {
         }
         let expiry = self.created_at_virtual_secs + self.lease_duration as i64;
         let remaining = expiry - now_virtual_secs;
-        if remaining < 0 { 0 } else { remaining as u32 }
+        if remaining < 0 {
+            0
+        } else {
+            remaining as u32
+        }
     }
 }
 
@@ -99,6 +107,14 @@ pub struct SimState {
     pub external_ip: String,
     pub subscriptions: HashMap<String, GenaSubscription>,
     pub device_uuid: String,
+    pub connection_type: String,
+    pub possible_connection_types: String,
+    pub connection_status: String,
+    pub nat_enabled: bool,
+    pub rsip_available: bool,
+    pub system_update_id: u32,
+    pub boot_id: u32,
+    pub config_id: u32,
 }
 
 impl SimState {
@@ -110,11 +126,20 @@ impl SimState {
             external_ip,
             subscriptions: HashMap::new(),
             device_uuid: uuid::Uuid::new_v4().to_string(),
+            connection_type: "IP_Routed".to_string(),
+            possible_connection_types: "IP_Routed".to_string(),
+            connection_status: "Connected".to_string(),
+            nat_enabled: true,
+            rsip_available: false,
+            system_update_id: 1,
+            boot_id: 1,
+            config_id: 1,
         }
     }
 
     pub fn add_mapping(&mut self, mapping: PortMapping) -> Result<(), UPnPError> {
         let key = MappingKey {
+            remote_host: mapping.remote_host.clone(),
             protocol: mapping.protocol.clone(),
             external_port: mapping.external_port,
         };
@@ -123,11 +148,18 @@ impl SimState {
         }
         self.mapping_order.push(key.clone());
         self.mappings.insert(key, mapping);
+        self.bump_system_update_id();
         Ok(())
     }
 
-    pub fn delete_mapping(&mut self, protocol: &str, external_port: u16) -> Result<(), UPnPError> {
+    pub fn delete_mapping(
+        &mut self,
+        remote_host: &str,
+        protocol: &str,
+        external_port: u16,
+    ) -> Result<(), UPnPError> {
         let key = MappingKey {
+            remote_host: remote_host.to_string(),
             protocol: protocol.to_string(),
             external_port,
         };
@@ -135,6 +167,7 @@ impl SimState {
             return Err(UPnPError::NoSuchEntryInArray);
         }
         self.mapping_order.retain(|k| k != &key);
+        self.bump_system_update_id();
         Ok(())
     }
 
@@ -145,8 +178,14 @@ impl SimState {
             .ok_or(UPnPError::NoSuchEntryInArray)
     }
 
-    pub fn get_mapping(&self, protocol: &str, external_port: u16) -> Result<&PortMapping, UPnPError> {
+    pub fn get_mapping(
+        &self,
+        remote_host: &str,
+        protocol: &str,
+        external_port: u16,
+    ) -> Result<&PortMapping, UPnPError> {
         let key = MappingKey {
+            remote_host: remote_host.to_string(),
             protocol: protocol.to_string(),
             external_port,
         };
@@ -166,7 +205,14 @@ impl SimState {
             self.mappings.remove(key);
         }
         self.mapping_order.retain(|k| !expired_keys.contains(k));
+        if count > 0 {
+            self.bump_system_update_id();
+        }
         count
+    }
+
+    pub fn bump_system_update_id(&mut self) {
+        self.system_update_id = self.system_update_id.wrapping_add(1);
     }
 }
 
@@ -176,6 +222,10 @@ pub enum UPnPError {
     ConflictInMappingEntry,
     InvalidArgs,
     ActionFailed,
+    PortMappingNotFound,
+    InactiveConnectionStateRequired,
+    ConnectionNotConfigured,
+    InconsistentParameters,
 }
 
 impl UPnPError {
@@ -185,6 +235,10 @@ impl UPnPError {
             UPnPError::ConflictInMappingEntry => 718,
             UPnPError::InvalidArgs => 402,
             UPnPError::ActionFailed => 501,
+            UPnPError::PortMappingNotFound => 730,
+            UPnPError::InactiveConnectionStateRequired => 703,
+            UPnPError::ConnectionNotConfigured => 706,
+            UPnPError::InconsistentParameters => 733,
         }
     }
 
@@ -194,6 +248,10 @@ impl UPnPError {
             UPnPError::ConflictInMappingEntry => "ConflictInMappingEntry",
             UPnPError::InvalidArgs => "InvalidArgs",
             UPnPError::ActionFailed => "ActionFailed",
+            UPnPError::PortMappingNotFound => "PortMappingNotFound",
+            UPnPError::InactiveConnectionStateRequired => "InactiveConnectionStateRequired",
+            UPnPError::ConnectionNotConfigured => "ConnectionNotConfigured",
+            UPnPError::InconsistentParameters => "InconsistentParameters",
         }
     }
 }

@@ -1596,6 +1596,7 @@ dependencies = [
  "fancy-duration",
  "http 1.4.0",
  "http-body-util",
+ "httpdate",
  "hyper",
  "hyper-util",
  "igd",
